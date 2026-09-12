@@ -1,0 +1,24 @@
+services:
+  web:
+    build: .
+    ports:
+      # 宿主端口可用 WEB_PORT 覆盖，默认 8080。
+      - "${WEB_PORT:-8080}:80"
+    healthcheck:
+      test: ["CMD", "wget", "--spider", "-q", "http://127.0.0.1/"]
+      interval: 2s
+      timeout: 3s
+      retries: 15
+      start_period: 5s
+
+  verify:
+    build:
+      context: .
+      dockerfile: Dockerfile.verify
+    depends_on:
+      web:
+        condition: service_healthy
+    environment:
+      BASE_URL: http://web:80
+      CI: "true"
+    restart: "no"

@@ -1,0 +1,10 @@
+# syntax=docker/dockerfile:1
+
+# 一次性验收镜像：自带 Chromium，依次执行类型检查、Vitest 与 Playwright。
+FROM mcr.microsoft.com/playwright:v1.47.2-jammy
+WORKDIR /app
+COPY package.json package-lock.json ./
+RUN npm ci --no-audit --no-fund
+COPY . .
+# BASE_URL 由 compose 注入（指向 web 服务），Playwright 不再自起本地服务器。
+CMD ["npm", "run", "verify"]
