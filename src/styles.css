@@ -165,6 +165,47 @@ button:disabled {
   flex-wrap: nowrap;
 }
 
+.cell-wrap {
+  display: inline-flex;
+  align-items: stretch;
+}
+
+.cell-gap {
+  align-self: stretch;
+  width: 7px;
+  min-height: 1.7em;
+  margin: 0 1px;
+  padding: 0;
+  border: none;
+  border-radius: 3px;
+  background: transparent;
+  cursor: crosshair;
+}
+
+.cell-gap:hover {
+  background: #c9bfa4;
+}
+
+.cell-gap:focus-visible {
+  outline: 2px solid #7a1f1f;
+  outline-offset: 1px;
+}
+
+.cell-gap-selected,
+.cell-gap-selected:hover {
+  background: #7a1f1f;
+}
+
+tr[data-selected-line='true'] td {
+  background: #f5e3dc;
+}
+
+.manual-info {
+  color: #2f5d3a;
+  font-size: 0.85rem;
+  margin: 0 0 10px;
+}
+
 .cell {
   display: inline-flex;
   align-items: center;

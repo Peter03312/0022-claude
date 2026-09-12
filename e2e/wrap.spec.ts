@@ -118,3 +118,159 @@ test('正文超过 200 字时提示并阻止排样', async ({ page }) => {
   await expect(page.getByTestId('text-errors')).toContainText('超过 200 字');
   await expect(page.getByTestId('typeset-button')).toBeDisabled();
 });
+
+test.describe('人工断点', () => {
+  const gap = (page: import('@playwright/test').Page, index: number) =>
+    page.locator(`.cell-gap[data-gap-index="${index}"]`);
+
+  test('选定断点按原字格宽度重排，取消后恢复原排样', async ({ page }) => {
+    await page.getByTestId('text-input').fill(SAMPLE);
+    await page.getByTestId('width-input').fill('8');
+    await page.getByTestId('typeset-button').click();
+
+    const rows = page.getByTestId('line-row');
+    await expect(rows).toHaveCount(3);
+
+    // 原排样：第 1 行 0–6（7 字），因「，」禁行首回退。
+    await expect(rows.nth(0).getByTestId('line-range')).toHaveText('0–6');
+    await expect(rows.nth(0).getByTestId('line-text')).toHaveText(
+      '天地玄黄宇宙洪',
+    );
+    await expect(page.getByTestId('manual-info')).toHaveCount(0);
+
+    // 在「黄」「宇」之间（间隙 4）选定人工断点。
+    await gap(page, 4).click();
+
+    await expect(page.getByTestId('manual-info')).toBeVisible();
+    await expect(page.getByTestId('manual-info')).toContainText('索引 4');
+
+    // 单一选中态：间隙 4 高亮，且对应行（前段最后一行，行号 1）标记。
+    await expect(gap(page, 4)).toHaveClass(/cell-gap-selected/);
+    await expect(gap(page, 4)).toHaveAttribute('aria-pressed', 'true');
+    await expect(
+      page.locator('tr[data-selected-line="true"]'),
+    ).toHaveCount(1);
+    await expect(
+      rows.nth(0).locator('tr[data-selected-line="true"]'),
+    ).toHaveCount(0);
+    await expect(
+      page.locator('tr[data-selected-line="true"]').getByTestId('line-no'),
+    ).toHaveText('1');
+
+    // 重排结果：仍 3 行，按原字格宽度折行，第 1 行变为「天地玄黄」。
+    await expect(rows).toHaveCount(3);
+    await expect(rows.nth(0).getByTestId('line-range')).toHaveText('0–3');
+    await expect(rows.nth(0).getByTestId('line-length')).toHaveText('4');
+    await expect(rows.nth(0).getByTestId('line-text')).toHaveText('天地玄黄');
+    await expect(rows.nth(0).getByTestId('line-moved')).toContainText(
+      '「宇」（索引 4）',
+    );
+    await expect(rows.nth(0).getByTestId('line-rule')).toContainText('人工断点');
+    await expect(rows.nth(1).getByTestId('line-text')).toHaveText(
+      '宇宙洪荒，日月盈',
+    );
+    await expect(rows.nth(1).getByTestId('line-range')).toHaveText('4–11');
+    await expect(rows.nth(2).getByTestId('line-text')).toHaveText('昃辰宿列张。');
+
+    // 再次点击同一间隙取消，恢复原排样。
+    await gap(page, 4).click();
+    await expect(page.getByTestId('manual-info')).toHaveCount(0);
+    await expect(
+      page.locator('tr[data-selected-line="true"]'),
+    ).toHaveCount(0);
+    await expect(gap(page, 4)).not.toHaveClass(/cell-gap-selected/);
+    await expect(rows).toHaveCount(3);
+    await expect(rows.nth(0).getByTestId('line-range')).toHaveText('0–6');
+    await expect(rows.nth(0).getByTestId('line-text')).toHaveText(
+      '天地玄黄宇宙洪',
+    );
+  });
+
+  test('修改正文会撤销人工断点与重排结果', async ({ page }) => {
+    await page.getByTestId('text-input').fill(SAMPLE);
+    await page.getByTestId('width-input').fill('8');
+    await page.getByTestId('typeset-button').click();
+    await gap(page, 4).click();
+    await expect(page.getByTestId('manual-info')).toBeVisible();
+
+    // 修改正文 → 结果与人工断点一并清除。
+    await page.getByTestId('text-input').fill(`${SAMPLE}天`);
+    await expect(page.getByTestId('layout-result')).toHaveCount(0);
+
+    // 重新生成排样：应回到无人工断点的原排样，无选中态。
+    await page.getByTestId('typeset-button').click();
+    await expect(page.getByTestId('manual-info')).toHaveCount(0);
+    await expect(
+      page.locator('tr[data-selected-line="true"]'),
+    ).toHaveCount(0);
+    await expect(page.getByTestId('line-row').nth(0).getByTestId('line-range')).toHaveText(
+      '0–6',
+    );
+  });
+
+  test('修改行宽会清除人工断点与旧结果', async ({ page }) => {
+    await page.getByTestId('text-input').fill(SAMPLE);
+    await page.getByTestId('typeset-button').click();
+    await gap(page, 4).click();
+    await expect(page.getByTestId('manual-info')).toBeVisible();
+
+    await page.getByTestId('width-input').fill('10');
+    await expect(page.getByTestId('layout-result')).toHaveCount(0);
+
+    await page.getByTestId('typeset-button').click();
+    await expect(page.getByTestId('manual-info')).toHaveCount(0);
+    await expect(
+      page.locator('tr[data-selected-line="true"]'),
+    ).toHaveCount(0);
+  });
+
+  test('禁行首间隙给出索引与原因且不展示部分排样（原排样保留）', async ({ page }) => {
+    await page.getByTestId('text-input').fill(SAMPLE);
+    await page.getByTestId('width-input').fill('8');
+    await page.getByTestId('typeset-button').click();
+    const rows = page.getByTestId('line-row');
+    await expect(rows).toHaveCount(3);
+
+    // 间隙 8 之后是「，」（禁行首）。
+    await gap(page, 8).click();
+
+    const failure = page.getByTestId('manual-failure');
+    await expect(failure).toBeVisible();
+    await expect(failure).toContainText('断点索引 8');
+    await expect(failure).toContainText('禁行首');
+
+    // 单一选中态只落在间隙上；无成功重排，故没有行被标为对应行。
+    await expect(gap(page, 8)).toHaveClass(/cell-gap-selected/);
+    await expect(
+      page.locator('tr[data-selected-line="true"]'),
+    ).toHaveCount(0);
+    // 原排样仍在（并非部分排样）。
+    await expect(rows).toHaveCount(3);
+    await expect(rows.nth(0).getByTestId('line-range')).toHaveText('0–6');
+    await expect(page.getByTestId('manual-info')).toHaveCount(0);
+
+    // 再次点击取消选择，错误消失。
+    await gap(page, 8).click();
+    await expect(failure).toHaveCount(0);
+    await expect(gap(page, 8)).not.toHaveClass(/cell-gap-selected/);
+  });
+
+  test('正文两端与禁行尾间隙同样被拒绝并指出索引', async ({ page }) => {
+    await page.getByTestId('text-input').fill('天地玄黄（宇宙洪荒日月');
+    await page.getByTestId('width-input').fill('8');
+    await page.getByTestId('typeset-button').click();
+
+    // 间隙 0：正文起始端。
+    await gap(page, 0).click();
+    const failure = page.getByTestId('manual-failure');
+    await expect(failure).toBeVisible();
+    await expect(failure).toContainText('断点索引 0');
+    await expect(failure).toContainText('正文两端');
+
+    // 改选间隙 5（其后是「宇」，其前是「（」禁行尾）。
+    await gap(page, 5).click();
+    await expect(failure).toContainText('断点索引 5');
+    await expect(failure).toContainText('禁行尾');
+    await expect(failure).toContainText('索引 4');
+  });
+});
